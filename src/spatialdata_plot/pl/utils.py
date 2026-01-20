@@ -2208,7 +2208,10 @@ def _type_check_params(param_dict: dict[str, Any], element_type: str) -> dict[st
     if outline_color:
         if not isinstance(outline_color, str | tuple | list):
             raise TypeError("Parameter 'color' must be a string or a tuple/list of floats or colors.")
-        if isinstance(outline_color, tuple | list):
+        if isinstance(outline_color, str) and element_type == "shapes" and not _is_color_like(outline_color):
+            param_dict["outline_col_for_color"] = outline_color
+            param_dict["outline_color"] = None
+        elif isinstance(outline_color, tuple | list):
             if len(outline_color) < 1:
                 raise ValueError("Empty tuple is not supported as input for outline_color!")
             if len(outline_color) == 1:
@@ -2226,6 +2229,13 @@ def _type_check_params(param_dict: dict[str, Any], element_type: str) -> dict[st
                 )
         else:
             param_dict["outline_color"] = Color(outline_color)
+
+    if param_dict.get("outline_col_for_color") is not None and param_dict.get("outline_color") is None:
+        param_dict["outline_color"] = Color("#000000ff")
+
+    if param_dict.get("outline_col_for_color") is not None:
+        if isinstance(param_dict.get("outline_width"), tuple) or isinstance(param_dict.get("outline_alpha"), tuple):
+            raise ValueError("Column-based outline colors currently support only a single outline.")
 
     if contour_px is not None and contour_px <= 0:
         raise ValueError("Parameter 'contour_px' must be a positive number.")
@@ -2571,6 +2581,7 @@ def _validate_shape_render_params(
         "na_color": na_color,
         "outline_width": outline_width,
         "outline_color": outline_color,
+        "outline_col_for_color": None,
         "outline_alpha": outline_alpha,
         "cmap": cmap,
         "norm": norm,
@@ -2596,6 +2607,7 @@ def _validate_shape_render_params(
         element_params[el]["outline_width"] = param_dict["outline_width"]
         element_params[el]["outline_color"] = param_dict["outline_color"]
         element_params[el]["outline_alpha"] = param_dict["outline_alpha"]
+        element_params[el]["outline_col_for_color"] = None
         element_params[el]["cmap"] = param_dict["cmap"]
         element_params[el]["norm"] = param_dict["norm"]
         element_params[el]["scale"] = param_dict["scale"]
@@ -2607,15 +2619,32 @@ def _validate_shape_render_params(
         element_params[el]["table_name"] = None
         element_params[el]["col_for_color"] = None
         col_for_color = param_dict["col_for_color"]
+        resolved_table_name = None
         if col_for_color is not None:
-            col_for_color, table_name = _validate_col_for_column_table(
+            col_for_color, resolved_table_name = _validate_col_for_column_table(
                 sdata, el, col_for_color, param_dict["table_name"]
             )
-            element_params[el]["table_name"] = table_name
             element_params[el]["col_for_color"] = col_for_color
 
-        element_params[el]["palette"] = param_dict["palette"] if param_dict["col_for_color"] is not None else None
-        element_params[el]["groups"] = param_dict["groups"] if param_dict["col_for_color"] is not None else None
+        outline_col_for_color = param_dict["outline_col_for_color"]
+        if outline_col_for_color is not None:
+            outline_col_for_color, outline_table_name = _validate_col_for_column_table(
+                sdata, el, outline_col_for_color, param_dict["table_name"]
+            )
+            if resolved_table_name is None:
+                resolved_table_name = outline_table_name
+            elif outline_table_name is not None and outline_table_name != resolved_table_name:
+                raise ValueError(
+                    "Outline color and fill color columns must come from the same table. "
+                    "Please pass `table_name` that contains both columns."
+                )
+            element_params[el]["outline_col_for_color"] = outline_col_for_color
+
+        element_params[el]["table_name"] = resolved_table_name
+
+        has_color_column = param_dict["col_for_color"] is not None or param_dict["outline_col_for_color"] is not None
+        element_params[el]["palette"] = param_dict["palette"] if has_color_column else None
+        element_params[el]["groups"] = param_dict["groups"] if has_color_column else None
         element_params[el]["method"] = param_dict["method"]
         element_params[el]["ds_reduction"] = param_dict["ds_reduction"]
         element_params[el]["colorbar"] = param_dict["colorbar"]

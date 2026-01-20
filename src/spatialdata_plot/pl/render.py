@@ -7,6 +7,7 @@ import dask
 import datashader as ds
 import geopandas as gpd
 import matplotlib
+from matplotlib import colors
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 import numpy as np
@@ -123,6 +124,7 @@ def _render_shapes(
 ) -> None:
     element = render_params.element
     col_for_color = render_params.col_for_color
+    outline_col_for_color = render_params.outline_col_for_color
     groups = render_params.groups
     table_layer = render_params.table_layer
 
@@ -168,6 +170,26 @@ def _render_shapes(
     if values_are_categorical and render_params.transfunc is not None:
         color_vector = render_params.transfunc(color_vector)
 
+    outline_color_source_vector = None
+    outline_color_vector = None
+    outline_values_are_categorical = False
+    if outline_col_for_color is not None:
+        outline_color_source_vector, outline_color_vector, outline_values_are_categorical = _set_color_source_vec(
+            sdata=sdata_filt,
+            element=sdata_filt[element],
+            element_name=element,
+            value_to_plot=outline_col_for_color,
+            groups=groups,
+            palette=render_params.palette,
+            na_color=render_params.cmap_params.na_color,
+            cmap_params=render_params.cmap_params,
+            table_name=table_name,
+            table_layer=table_layer,
+            coordinate_system=coordinate_system,
+        )
+        if outline_values_are_categorical and render_params.transfunc is not None:
+            outline_color_vector = render_params.transfunc(outline_color_vector)
+
     norm = copy(render_params.cmap_params.norm)
 
     if len(color_vector) == 0:
@@ -180,6 +202,11 @@ def _render_shapes(
         shapes = shapes.reset_index(drop=True)
         color_source_vector = color_source_vector[mask]
         color_vector = color_vector[mask]
+        if outline_color_vector is not None:
+            mask_values = mask.to_numpy()
+            outline_color_vector = outline_color_vector[mask_values]
+            if outline_color_source_vector is not None:
+                outline_color_source_vector = outline_color_source_vector[mask_values]
 
     # continuous case: leave NaNs as NaNs; utils maps them to na_color during draw
     if color_source_vector is None and not values_are_categorical:
@@ -240,6 +267,10 @@ def _render_shapes(
 
     if method is None:
         method = "datashader" if len(shapes) > 10000 else "matplotlib"
+
+    if outline_col_for_color is not None and method != "matplotlib":
+        logger.warning("Per-shape outline colors require the matplotlib backend; falling back to matplotlib.")
+        method = "matplotlib"
 
     if method != "matplotlib":
         # we only notify the user when we switched away from matplotlib
@@ -463,8 +494,35 @@ def _render_shapes(
             )
 
     elif method == "matplotlib":
+        outline_colors = None
+        if outline_col_for_color is not None and outline_color_vector is not None:
+            if outline_values_are_categorical:
+                outline_colors = outline_color_vector
+            else:
+                outline_series = (
+                    outline_color_vector
+                    if isinstance(outline_color_vector, pd.Series)
+                    else pd.Series(outline_color_vector)
+                )
+                outline_numeric = pd.to_numeric(outline_series, errors="coerce").to_numpy()
+                finite_mask = np.isfinite(outline_numeric)
+                outline_colors = np.empty((len(outline_numeric), 4), dtype=float)
+                outline_colors[:] = colors.to_rgba(render_params.cmap_params.na_color.get_hex_with_alpha())
+                if finite_mask.any():
+                    outline_norm = copy(render_params.cmap_params.norm)
+                    outline_colors[finite_mask] = render_params.cmap_params.cmap(
+                        outline_norm(outline_numeric[finite_mask])
+                    )
+
         # render outlines separately to ensure they are always underneath the shape
-        if render_params.outline_alpha[0] > 0 and isinstance(render_params.outline_params.outer_outline_color, Color):
+        if render_params.outline_alpha[0] > 0 and (
+            outline_col_for_color is not None or isinstance(render_params.outline_params.outer_outline_color, Color)
+        ):
+            outline_color = outline_colors
+            if outline_color is None:
+                outline_color = render_params.outline_params.outer_outline_color.get_hex()
+            elif hasattr(outline_color, "to_numpy"):
+                outline_color = outline_color.to_numpy()
             _cax = _get_collection_shape(
                 shapes=shapes,
                 s=render_params.scale,
@@ -475,7 +533,7 @@ def _render_shapes(
                 norm=None,
                 fill_alpha=0.0,
                 outline_alpha=render_params.outline_alpha[0],
-                outline_color=render_params.outline_params.outer_outline_color.get_hex(),
+                outline_color=outline_color,
                 linewidth=render_params.outline_params.outer_outline_linewidth,
                 zorder=render_params.zorder,
                 # **kwargs,

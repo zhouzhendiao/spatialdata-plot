@@ -217,6 +217,7 @@ class ShapesRenderParams:
     element: str
     color: Color | None = None
     col_for_color: str | None = None
+    outline_col_for_color: str | None = None
     groups: str | list[str] | None = None
     contour_px: int | None = None
     palette: ListedColormap | list[str] | None = None

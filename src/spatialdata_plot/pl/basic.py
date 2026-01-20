@@ -233,6 +233,8 @@ class PlotAccessor:
             are given (tuple), 2 borders are shown with these colors (outer & inner). If `outline_width` and/or
             `outline_alpha` are used to indicate that one/two outlines should be drawn, the default outline colors
             "#000000" and "#ffffff are used for outer/only and inner outline respectively.
+            If a string is provided and it is not a color-like value, it is treated as a column name in the
+            annotating table and used to set per-shape outline colors (single-outline, matplotlib backend only).
         outline_alpha : float | int | tuple[float | int, float | int] | None, optional
             Alpha value for the outline of shapes. Invisible by default, meaning outline_alpha=0.0 if both outline_color
             and outline_width are not specified. Else, outlines are rendered with the alpha implied by outline_color, or
@@ -329,6 +331,7 @@ class PlotAccessor:
                 element=element,
                 color=param_values["color"],
                 col_for_color=param_values["col_for_color"],
+                outline_col_for_color=param_values["outline_col_for_color"],
                 groups=param_values["groups"],
                 scale=param_values["scale"],
                 outline_params=outline_params,

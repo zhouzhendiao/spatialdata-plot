@@ -62,6 +62,30 @@ class TestShapes(PlotTester, metaclass=PlotTesterMeta):
             element="blobs_polygons", outline_alpha=1, outline_color=(0.0, 1.0, 0.0, 1.0)
         ).pl.show()
 
+    def test_plot_can_color_outline_by_column(self, sdata_blobs: SpatialData):
+        element = "blobs_polygons"
+        shapes = sdata_blobs.shapes[element]
+        shape_ids = [f"shape_{idx}" for idx in range(len(shapes))]
+        shapes.index = shape_ids
+        sdata_blobs.shapes[element] = shapes
+
+        adata = AnnData(np.zeros((len(shapes), 1)))
+        adata.obs["outline_group"] = pd.Categorical(
+            ["a" if idx % 2 == 0 else "b" for idx in range(len(shapes))]
+        )
+        adata.obs["instance_id"] = shape_ids
+        adata.obs["region"] = pd.Categorical([element] * len(shapes))
+        table = TableModel.parse(adata=adata, region=element, region_key="region", instance_key="instance_id")
+        sdata_blobs["table"] = table
+
+        sdata_blobs.pl.render_shapes(
+            element=element,
+            outline_alpha=1.0,
+            outline_color="outline_group",
+            fill_alpha=0.0,
+            table_name="table",
+        ).pl.show()
+
     def test_plot_can_render_empty_geometry(self, sdata_blobs: SpatialData):
         sdata_blobs.shapes["blobs_circles"].at[0, "geometry"] = gpd.points_from_xy([None], [None])[0]
         sdata_blobs.pl.render_shapes().pl.show()
